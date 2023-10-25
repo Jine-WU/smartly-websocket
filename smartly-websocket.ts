@@ -7,6 +7,7 @@
 
 import * as Events from './events';
 
+// eslint-disable-next-line consistent-return
 const getGlobalWebSocket = (): WebSocket | undefined => {
     if (typeof WebSocket !== 'undefined') {
         // @ts-ignore
@@ -23,6 +24,10 @@ export type Event = Events.Event;
 export type ErrorEvent = Events.ErrorEvent;
 export type CloseEvent = Events.CloseEvent;
 
+type Query = {
+    [key: string]: any;
+}
+
 export type Options = {
     WebSocket?: any;
     maxReconnectionDelay?: number;
@@ -34,6 +39,11 @@ export type Options = {
     maxEnqueuedMessages?: number;
     startClosed?: boolean;
     debug?: boolean;
+    query?: Query;
+    pingInterval?: number;
+    pingTimeout?: number;
+    heartbeatData?: string;
+    ack?: boolean;
 };
 
 const DEFAULT = {
@@ -46,6 +56,31 @@ const DEFAULT = {
     maxEnqueuedMessages: Infinity,
     startClosed: false,
     debug: false,
+    query: {},
+    pingInterval: 10000,
+    pingTimeout: 15000,
+    ack: true,
+};
+
+const EVENT_NAME: any = {
+    CONNECT: 'connect',
+    CLOSE: 'close',
+    ERROR: 'error',
+    CONNECT_TIMEOUT: 'connect_timeout',
+    RECONNECT: 'reconnect',
+    RECONNECT_ATTEMPT: 'reconnect_attempt',
+    RECONNECTING: 'reconnecting',
+    RECONNECT_FAILED: 'reconnect_failed',
+    PING: 'ping',
+    PONG: 'pong',
+};
+
+const MESSAGE_FRAME_IDENTIFIER: any = {
+    CONNECT: '0',
+    PING: '2',
+    PONG: '3',
+    MESSAGE: '42',
+    CALLBACK: '43',
 };
 
 export type UrlProvider = string | (() => string) | (() => Promise<string>);
@@ -59,25 +94,42 @@ export type ListenersMap = {
     close: Array<Events.WebSocketEventListenerMap['close']>;
 };
 
-export default class ReconnectingWebSocket {
+export default class SmartlyWebSocket {
     private _ws?: WebSocket;
+
     private _listeners: ListenersMap = {
         error: [],
         message: [],
         open: [],
         close: [],
     };
+
+    private _eventListeners: Map<string, any> = new Map();
+
     private _retryCount = -1;
+
     private _uptimeTimeout: any;
+
     private _connectTimeout: any;
+
+    private _heartbeatTimer: any;
+
+    private _heartbeatTimeout: any;
+
     private _shouldReconnect = true;
+
     private _connectLock = false;
+
     private _binaryType: BinaryType = 'blob';
+
     private _closeCalled = false;
+
     private _messageQueue: Message[] = [];
 
-    private readonly _url: UrlProvider;
+    protected readonly _url: UrlProvider;
+
     private readonly _protocols?: string | string[];
+
     private readonly _options: Options;
 
     constructor(url: UrlProvider, protocols?: string | string[], options: Options = {}) {
@@ -93,27 +145,33 @@ export default class ReconnectingWebSocket {
     static get CONNECTING() {
         return 0;
     }
+
     static get OPEN() {
         return 1;
     }
+
     static get CLOSING() {
         return 2;
     }
+
     static get CLOSED() {
         return 3;
     }
 
     get CONNECTING() {
-        return ReconnectingWebSocket.CONNECTING;
+        return SmartlyWebSocket.CONNECTING;
     }
+
     get OPEN() {
-        return ReconnectingWebSocket.OPEN;
+        return SmartlyWebSocket.OPEN;
     }
+
     get CLOSING() {
-        return ReconnectingWebSocket.CLOSING;
+        return SmartlyWebSocket.CLOSING;
     }
+
     get CLOSED() {
-        return ReconnectingWebSocket.CLOSED;
+        return SmartlyWebSocket.CLOSED;
     }
 
     get binaryType() {
@@ -178,9 +236,7 @@ export default class ReconnectingWebSocket {
         if (this._ws) {
             return this._ws.readyState;
         }
-        return this._options.startClosed
-            ? ReconnectingWebSocket.CLOSED
-            : ReconnectingWebSocket.CONNECTING;
+        return this._options.startClosed ? SmartlyWebSocket.CLOSED : SmartlyWebSocket.CONNECTING;
     }
 
     /**
@@ -216,6 +272,7 @@ export default class ReconnectingWebSocket {
      * CLOSED, this method does nothing
      */
     public close(code = 1000, reason?: string) {
+        reason = reason || 'client disconnect';
         this._closeCalled = true;
         this._shouldReconnect = false;
         this._clearTimeouts();
@@ -254,7 +311,7 @@ export default class ReconnectingWebSocket {
             this._debug('send', data);
             this._ws.send(data);
         } else {
-            const {maxEnqueuedMessages = DEFAULT.maxEnqueuedMessages} = this._options;
+            const { maxEnqueuedMessages = DEFAULT.maxEnqueuedMessages } = this._options;
             if (this._messageQueue.length < maxEnqueuedMessages) {
                 this._debug('enqueue', data);
                 this._messageQueue.push(data);
@@ -294,15 +351,61 @@ export default class ReconnectingWebSocket {
     ): void {
         if (this._listeners[type]) {
             // @ts-ignore
-            this._listeners[type] = this._listeners[type].filter(l => l !== listener);
+            this._listeners[type] = this._listeners[type].filter((l) => l !== listener);
         }
+    }
+
+    /**
+     * 自定义事件监听
+     * @param eventName
+     * @param callback
+     */
+    public on(eventName: string, callback?: (cbRes: any) => void) {
+        if (!this._eventListeners.has(eventName)) {
+            this._eventListeners.set(eventName, []);
+        }
+        this._eventListeners.get(eventName).push(callback);
+    }
+
+    /**
+     * 移除自定义事件监听
+     * @param eventName
+     * @param callback
+     */
+    public off(eventName: string, callback?: (cbRes: any) => void) {
+        if (this._eventListeners.has(eventName)) {
+            this._eventListeners.set(eventName, this._eventListeners.get(eventName).filter((cb: any) => cb !== callback));
+        }
+    }
+
+    /**
+     * 自定义发送事件
+     * @param eventName
+     * @param payload
+     * @param cb
+     */
+    public emit(eventName: string, payload: any, cb?: (cbRes: any) => void) {}
+
+    private _formattedTime() {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+
+        const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
+
+        return formattedTime;
     }
 
     private _debug(...args: any[]) {
         if (this._options.debug) {
             // not using spread because compiled version uses Symbols
             // tslint:disable-next-line
-            console.log.apply(console, ['RWS>', ...args]);
+            console.log.apply(console, [this._formattedTime(), '\nSS_WS >>>', ...args]);
         }
     }
 
@@ -314,8 +417,8 @@ export default class ReconnectingWebSocket {
         } = this._options;
         let delay = 0;
         if (this._retryCount > 0) {
-            delay =
-                minReconnectionDelay * Math.pow(reconnectionDelayGrowFactor, this._retryCount - 1);
+            // eslint-disable-next-line no-restricted-properties
+            delay = minReconnectionDelay * Math.pow(reconnectionDelayGrowFactor, this._retryCount - 1);
             if (delay > maxReconnectionDelay) {
                 delay = maxReconnectionDelay;
             }
@@ -325,19 +428,22 @@ export default class ReconnectingWebSocket {
     }
 
     private _wait(): Promise<void> {
-        return new Promise(resolve => {
+        return new Promise((resolve) => {
             setTimeout(resolve, this._getNextDelay());
         });
     }
 
     private _getNextUrl(urlProvider: UrlProvider): Promise<string> {
         if (typeof urlProvider === 'string') {
+            if (this._options.query) {
+                return Promise.resolve(this._assembleUrl(urlProvider, this._options.query || DEFAULT.query));
+            }
             return Promise.resolve(urlProvider);
         }
         if (typeof urlProvider === 'function') {
             const url = urlProvider();
             if (typeof url === 'string') {
-                return Promise.resolve(url);
+                return Promise.resolve(this._assembleUrl(url, this._options.query || DEFAULT.query));
             }
             // @ts-ignore redundant check
             if (url.then) {
@@ -361,10 +467,17 @@ export default class ReconnectingWebSocket {
 
         if (this._retryCount >= maxRetries) {
             this._debug('max retries reached', this._retryCount, '>=', maxRetries);
+            this._broadcastEvent(EVENT_NAME.RECONNECT_FAILED);
+            // 抛出重试异常
             return;
         }
 
+        // eslint-disable-next-line no-plusplus
         this._retryCount++;
+
+        if (this._retryCount > 0) {
+            this._broadcastEvent(EVENT_NAME.RECONNECT_ATTEMPT, { retryCount: this._retryCount });
+        }
 
         this._debug('connect', this._retryCount);
         this._removeListeners();
@@ -373,15 +486,16 @@ export default class ReconnectingWebSocket {
         }
         this._wait()
             .then(() => this._getNextUrl(this._url))
-            .then(url => {
+            .then((url) => {
                 // close could be called before creating the ws
                 if (this._closeCalled) {
                     return;
                 }
-                this._debug('connect', {url, protocols: this._protocols});
-                this._ws = this._protocols
-                    ? new WebSocket(url, this._protocols)
-                    : new WebSocket(url);
+                this._debug('connect', { url, protocols: this._protocols });
+                this._ws = this._protocols ? new WebSocket(url, this._protocols) : new WebSocket(url);
+                if (this._retryCount > 0) {
+                    this._broadcastEvent(EVENT_NAME.RECONNECTING, { retryCount: this._retryCount });
+                }
                 this._ws!.binaryType = this._binaryType;
                 this._connectLock = false;
                 this._addListeners();
@@ -397,6 +511,7 @@ export default class ReconnectingWebSocket {
 
     private _disconnect(code = 1000, reason?: string) {
         this._clearTimeouts();
+        this._stopHeartbeat();
         if (!this._ws) {
             return;
         }
@@ -429,46 +544,66 @@ export default class ReconnectingWebSocket {
 
     private _handleOpen = (event: Event) => {
         this._debug('open event');
-        const {minUptime = DEFAULT.minUptime} = this._options;
+        const { minUptime = DEFAULT.minUptime } = this._options;
 
         clearTimeout(this._connectTimeout);
         this._uptimeTimeout = setTimeout(() => this._acceptOpen(), minUptime);
 
         this._ws!.binaryType = this._binaryType;
 
+        this._startHeartbeat();
+
         // send enqueued messages (messages sent before websocket open event)
-        this._messageQueue.forEach(message => this._ws?.send(message));
+        this._messageQueue.forEach((message) => this._ws?.send(message));
         this._messageQueue = [];
 
         if (this.onopen) {
             this.onopen(event);
         }
-        this._listeners.open.forEach(listener => this._callEventListener(event, listener));
+        this._listeners.open.forEach((listener) => this._callEventListener(event, listener));
+        if (this._retryCount > 0) {
+            this._broadcastEvent(EVENT_NAME.RECONNECT, { ...event, retryCount: this._retryCount });
+        } else {
+            this._broadcastEvent(EVENT_NAME.CONNECT, event);
+        }
     };
 
     private _handleMessage = (event: MessageEvent) => {
+        if (event.data === '3') {
+            this._triggerPongCallback();
+            return;
+        }
+
         this._debug('message event');
+        console.log('收到消息：', event.data);
 
         if (this.onmessage) {
             this.onmessage(event);
         }
-        this._listeners.message.forEach(listener => this._callEventListener(event, listener));
+        this._listeners.message.forEach((listener) => this._callEventListener(event, listener));
+        // todo 广播消息事件
     };
 
     private _handleError = (event: Events.ErrorEvent) => {
-        this._debug('error event', event.message);
+        this._debug('error event', event);
         this._disconnect(undefined, event.message === 'TIMEOUT' ? 'timeout' : undefined);
 
         if (this.onerror) {
             this.onerror(event);
         }
         this._debug('exec error listeners');
-        this._listeners.error.forEach(listener => this._callEventListener(event, listener));
+        this._listeners.error.forEach((listener) => this._callEventListener(event, listener));
+        if (event.message === 'TIMEOUT') {
+            this._broadcastEvent(EVENT_NAME.CONNECT_TIMEOUT);
+        } else {
+            this._broadcastEvent(EVENT_NAME.ERROR, event);
+        }
 
         this._connect();
     };
 
     private _handleClose = (event: Events.CloseEvent) => {
+        console.log('断连原因：', event);
         this._debug('close event');
         this._clearTimeouts();
 
@@ -479,7 +614,8 @@ export default class ReconnectingWebSocket {
         if (this.onclose) {
             this.onclose(event);
         }
-        this._listeners.close.forEach(listener => this._callEventListener(event, listener));
+        this._listeners.close.forEach((listener) => this._callEventListener(event, listener));
+        this._broadcastEvent(EVENT_NAME.CLOSE, event);
     };
 
     private _removeListeners() {
@@ -509,5 +645,61 @@ export default class ReconnectingWebSocket {
     private _clearTimeouts() {
         clearTimeout(this._connectTimeout);
         clearTimeout(this._uptimeTimeout);
+    }
+
+    private _assembleUrl(url: string, query: Query) {
+        if (query) {
+            const queryString = Object.keys(query).map((key) => `${key}=${query[key]}`).join('&');
+            if (url.indexOf('?') === -1) {
+                url += `?${queryString}`;
+            } else {
+                url += `&${queryString}`;
+            }
+        }
+        return url;
+    }
+
+    private _broadcastEvent(eventName: string, res?: any) {
+        if (this._eventListeners.has(eventName)) {
+            this._eventListeners.get(eventName).forEach((callback: any) => {
+                // eslint-disable-next-line no-unused-expressions
+                res ? callback(res) : callback();
+            });
+        }
+    }
+
+    private _startHeartbeat() {
+        const { pingInterval = DEFAULT.pingInterval, pingTimeout = DEFAULT.pingTimeout } = this._options;
+        this._heartbeatTimer = setInterval(() => {
+            if (this._ws?.readyState === this.OPEN && !this._heartbeatTimeout) {
+                // todo 心跳结构
+                this._ws.send(this._options.heartbeatData || MESSAGE_FRAME_IDENTIFIER.PING);
+                this._broadcastEvent(EVENT_NAME.PING);
+                this._debug('ping');
+                this._heartbeatTimeout = setTimeout(() => {
+                    this._debug('ping timeout');
+                    this._disconnect(1000, 'ping timeout');
+                    this._connect();
+                }, pingTimeout);
+            }
+        }, pingInterval);
+    }
+
+    private _stopHeartbeat() {
+        if (this._heartbeatTimer) {
+            console.log('中断心跳');
+            this._debug('stop ping');
+            clearInterval(this._heartbeatTimer);
+            clearTimeout(this._heartbeatTimeout);
+            this._heartbeatTimer = null;
+            this._heartbeatTimeout = null;
+        }
+    }
+
+    private _triggerPongCallback() {
+        this._debug('pong');
+        clearTimeout(this._heartbeatTimeout);
+        this._heartbeatTimeout = null;
+        this._broadcastEvent(EVENT_NAME.PONG);
     }
 }

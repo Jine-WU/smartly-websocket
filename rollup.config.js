@@ -1,25 +1,25 @@
 import typescript from 'rollup-plugin-typescript2';
 
 export default {
-    input: 'reconnecting-websocket.ts',
+    input: 'smartly-websocket.ts',
     plugins: [typescript()],
     output: [
         {
-            file: 'dist/reconnecting-websocket-iife.js',
+            file: 'dist/smartly-websocket-iife.js',
             format: 'iife',
-            name: 'ReconnectingWebSocket',
+            name: 'SmartlyWebSocket',
         },
         {
-            file: 'dist/reconnecting-websocket-amd.js',
+            file: 'dist/smartly-websocket-amd.js',
             format: 'amd',
-            name: 'ReconnectingWebSocket',
+            name: 'SmartlyWebSocket',
         },
         {
-            file: 'dist/reconnecting-websocket-cjs.js',
+            file: 'dist/smartly-websocket-cjs.js',
             format: 'cjs',
         },
         {
-            file: 'dist/reconnecting-websocket.mjs',
+            file: 'dist/smartly-websocket.mjs',
             format: 'es',
         },
         {

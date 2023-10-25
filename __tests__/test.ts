@@ -1,6 +1,6 @@
 // @ts-ignore
 import WebSocket from 'ws';
-import ReconnectingWebSocket, {ErrorEvent} from '../reconnecting-websocket';
+import SmartlyWebSocket, {ErrorEvent} from '../smartly-websocket';
 import {spawn} from 'child_process';
 const WebSocketServer = WebSocket.Server;
 
@@ -20,34 +20,34 @@ afterEach(() => {
 test('throws with invalid constructor', () => {
     delete (global as any).WebSocket;
     expect(() => {
-        new ReconnectingWebSocket(URL, undefined, {WebSocket: 123, maxRetries: 0});
+        new SmartlyWebSocket(URL, undefined, {WebSocket: 123, maxRetries: 0});
     }).toThrow();
 });
 
 test('throws with missing constructor', () => {
     delete (global as any).WebSocket;
     expect(() => {
-        new ReconnectingWebSocket(URL, undefined, {maxRetries: 0});
+        new SmartlyWebSocket(URL, undefined, {maxRetries: 0});
     }).toThrow();
 });
 
 test('throws with non-constructor object', () => {
     (global as any).WebSocket = {};
     expect(() => {
-        new ReconnectingWebSocket(URL, undefined, {maxRetries: 0});
+        new SmartlyWebSocket(URL, undefined, {maxRetries: 0});
     }).toThrow();
 });
 
 test('throws if not created with `new`', () => {
     expect(() => {
         // @ts-ignore
-        ReconnectingWebSocket(URL, undefined);
+        SmartlyWebSocket(URL, undefined);
     }).toThrow(TypeError);
 });
 
 test('global WebSocket is used if available', done => {
     // @ts-ignore
-    const ws = new ReconnectingWebSocket(URL, undefined, {maxRetries: 0});
+    const ws = new SmartlyWebSocket(URL, undefined, {maxRetries: 0});
     ws.onerror = () => {
         // @ts-ignore
         expect(ws._ws instanceof WebSocket).toBe(true);
@@ -56,7 +56,7 @@ test('global WebSocket is used if available', done => {
 });
 
 test('getters when not ready', done => {
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         maxRetries: 0,
     });
     expect(ws.bufferedAmount).toBe(0);
@@ -73,7 +73,7 @@ test('getters when not ready', done => {
 test('debug on', done => {
     const logSpy = jest.spyOn(console, 'log').mockReturnValue();
 
-    const ws = new ReconnectingWebSocket(URL, undefined, {maxRetries: 0, debug: true});
+    const ws = new SmartlyWebSocket(URL, undefined, {maxRetries: 0, debug: true});
 
     ws.onerror = () => {
         expect(logSpy).toHaveBeenCalledWith('RWS>', 'connect', 0);
@@ -84,7 +84,7 @@ test('debug on', done => {
 test('debug off', done => {
     const logSpy = jest.spyOn(console, 'log').mockReturnValue();
 
-    const ws = new ReconnectingWebSocket(URL, undefined, {maxRetries: 0});
+    const ws = new SmartlyWebSocket(URL, undefined, {maxRetries: 0});
 
     ws.onerror = () => {
         expect(logSpy).not.toHaveBeenCalled();
@@ -94,7 +94,7 @@ test('debug off', done => {
 
 test('pass WebSocket via options', done => {
     delete (global as any).WebSocket;
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         WebSocket,
         maxRetries: 0,
     });
@@ -107,7 +107,7 @@ test('pass WebSocket via options', done => {
 
 test('URL provider', async () => {
     const url = 'example.com';
-    const ws = new ReconnectingWebSocket(URL, undefined, {maxRetries: 0});
+    const ws = new SmartlyWebSocket(URL, undefined, {maxRetries: 0});
 
     // @ts-ignore - accessing private property
     expect(await ws._getNextUrl(url)).toBe(url);
@@ -128,7 +128,7 @@ test('URL provider', async () => {
 test('websocket protocol', done => {
     const anyProtocol = 'foobar';
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, anyProtocol);
+    const ws = new SmartlyWebSocket(URL, anyProtocol);
 
     ws.addEventListener('open', () => {
         expect(ws.url).toBe(URL);
@@ -145,7 +145,7 @@ test('websocket protocol', done => {
 
 test('undefined websocket protocol', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, undefined, {});
+    const ws = new SmartlyWebSocket(URL, undefined, {});
 
     ws.addEventListener('open', () => {
         expect(ws.url).toBe(URL);
@@ -164,7 +164,7 @@ test('null websocket protocol', done => {
     const wss = new WebSocketServer({port: PORT});
 
     // @ts-ignore - null is not allowed but could be passed in vanilla js
-    const ws = new ReconnectingWebSocket(URL, null, {});
+    const ws = new SmartlyWebSocket(URL, null, {});
     ws.addEventListener('open', () => {
         expect(ws.url).toBe(URL);
         expect(ws.protocol).toBe('');
@@ -179,12 +179,12 @@ test('null websocket protocol', done => {
 });
 
 test('connection status constants', () => {
-    const ws = new ReconnectingWebSocket(URL, undefined, {maxRetries: 0});
+    const ws = new SmartlyWebSocket(URL, undefined, {maxRetries: 0});
 
-    expect(ReconnectingWebSocket.CONNECTING).toBe(0);
-    expect(ReconnectingWebSocket.OPEN).toBe(1);
-    expect(ReconnectingWebSocket.CLOSING).toBe(2);
-    expect(ReconnectingWebSocket.CLOSED).toBe(3);
+    expect(SmartlyWebSocket.CONNECTING).toBe(0);
+    expect(SmartlyWebSocket.OPEN).toBe(1);
+    expect(SmartlyWebSocket.CLOSING).toBe(2);
+    expect(SmartlyWebSocket.CLOSED).toBe(3);
 
     expect(ws.CONNECTING).toBe(0);
     expect(ws.OPEN).toBe(1);
@@ -194,7 +194,7 @@ test('connection status constants', () => {
 });
 
 const maxRetriesTest = (count: number, done: () => void) => {
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         maxRetries: count,
         maxReconnectionDelay: 200,
     });
@@ -214,7 +214,7 @@ test('max retries: 1', done => maxRetriesTest(1, done));
 test('max retries: 5', done => maxRetriesTest(5, done));
 
 test('level0 event listeners are kept after reconnect', done => {
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         maxRetries: 4,
         reconnectionDelayGrowFactor: 1.2,
         maxReconnectionDelay: 20,
@@ -243,7 +243,7 @@ test('level0 event listeners are kept after reconnect', done => {
 test('level2 event listeners', done => {
     const anyProtocol = 'foobar';
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, anyProtocol, {});
+    const ws = new SmartlyWebSocket(URL, anyProtocol, {});
 
     ws.addEventListener('open', () => {
         expect(ws.protocol).toBe(anyProtocol);
@@ -274,7 +274,7 @@ test('level2 event listeners', done => {
 test('level2 event listeners using object with handleEvent', done => {
     const anyProtocol = 'foobar';
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, anyProtocol, {});
+    const ws = new SmartlyWebSocket(URL, anyProtocol, {});
 
     ws.addEventListener('open', {
         // @ts-ignore
@@ -320,7 +320,7 @@ test('connection timeout', done => {
         if (lock) return;
         lock = true;
 
-        const ws = new ReconnectingWebSocket(`ws://localhost:${PORT_UNRESPONSIVE}`, undefined, {
+        const ws = new SmartlyWebSocket(`ws://localhost:${PORT_UNRESPONSIVE}`, undefined, {
             minReconnectionDelay: 50,
             connectionTimeout: 500,
             maxRetries: 1,
@@ -338,7 +338,7 @@ test('connection timeout', done => {
 test('getters', done => {
     const anyProtocol = 'foobar';
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, anyProtocol, {maxReconnectionDelay: 100});
+    const ws = new SmartlyWebSocket(URL, anyProtocol, {maxReconnectionDelay: 100});
 
     ws.addEventListener('open', () => {
         expect(ws.protocol).toBe(anyProtocol);
@@ -356,7 +356,7 @@ test('getters', done => {
 
 test('binaryType', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, undefined, {minReconnectionDelay: 0});
+    const ws = new SmartlyWebSocket(URL, undefined, {minReconnectionDelay: 0});
 
     expect(ws.binaryType).toBe('blob');
     ws.binaryType = 'arraybuffer';
@@ -376,7 +376,7 @@ test('binaryType', done => {
 
 test('calling to close multiple times', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, undefined, {});
+    const ws = new SmartlyWebSocket(URL, undefined, {});
 
     ws.addEventListener('open', () => {
         ws.close();
@@ -392,7 +392,7 @@ test('calling to close multiple times', done => {
 
 test('calling to reconnect when not ready', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, undefined, {});
+    const ws = new SmartlyWebSocket(URL, undefined, {});
     ws.reconnect();
     ws.reconnect();
 
@@ -422,7 +422,7 @@ test('start closed', done => {
 
     expect.assertions(8);
 
-    const ws = new ReconnectingWebSocket(URL, anyProtocol, {
+    const ws = new SmartlyWebSocket(URL, anyProtocol, {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 200,
         startClosed: true,
@@ -472,7 +472,7 @@ test('connect, send, receive, close', done => {
 
     expect.assertions(7);
 
-    const ws = new ReconnectingWebSocket(URL, anyProtocol, {
+    const ws = new SmartlyWebSocket(URL, anyProtocol, {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 200,
     });
@@ -517,7 +517,7 @@ test('connect, send, receive, reconnect', done => {
     // 7 = 2 * 3 close + 1 closed
     expect.assertions(21);
 
-    const ws = new ReconnectingWebSocket(URL, anyProtocol, {
+    const ws = new SmartlyWebSocket(URL, anyProtocol, {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 200,
     });
@@ -554,7 +554,7 @@ test('connect, send, receive, reconnect', done => {
 });
 
 test('immediately-failed connection should not timeout', done => {
-    const ws = new ReconnectingWebSocket('ws://255.255.255.255', undefined, {
+    const ws = new SmartlyWebSocket('ws://255.255.255.255', undefined, {
         maxRetries: 2,
         connectionTimeout: 500,
     });
@@ -573,7 +573,7 @@ test('immediately-failed connection should not timeout', done => {
 });
 
 test('immediately-failed connection with 0 maxRetries must not retry', done => {
-    const ws = new ReconnectingWebSocket('ws://255.255.255.255', [], {
+    const ws = new SmartlyWebSocket('ws://255.255.255.255', [], {
         maxRetries: 0,
         connectionTimeout: 2000,
         minReconnectionDelay: 100,
@@ -597,7 +597,7 @@ test('immediately-failed connection with 0 maxRetries must not retry', done => {
 
 test('connect and close before establishing connection', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 200,
     });
@@ -624,7 +624,7 @@ test('connect and close before establishing connection', done => {
 });
 
 test('enqueue messages', done => {
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         maxRetries: 0,
     });
     const count = 10;
@@ -639,7 +639,7 @@ test('enqueue messages', done => {
 
 test('respect maximum enqueued messages', done => {
     const queueSize = 2;
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         maxRetries: 0,
         maxEnqueuedMessages: queueSize,
     });
@@ -655,7 +655,7 @@ test('respect maximum enqueued messages', done => {
 
 test('enqueue messages before websocket initialization with expected order', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL);
+    const ws = new SmartlyWebSocket(URL);
 
     const messages = ['message1', 'message2', 'message3'];
 
@@ -691,7 +691,7 @@ test('enqueue messages before websocket initialization with expected order', don
 
 test('closing from the other side should reconnect', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 200,
     });
@@ -732,7 +732,7 @@ test('closing from the other side should reconnect', done => {
 
 test('closing from the other side should allow to keep closed', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 200,
     });
@@ -763,7 +763,7 @@ test('closing from the other side should allow to keep closed', done => {
 });
 
 test('reconnection delay grow factor', done => {
-    const ws = new ReconnectingWebSocket('wss://255.255.255.255', [], {
+    const ws = new SmartlyWebSocket('wss://255.255.255.255', [], {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 1000,
         reconnectionDelayGrowFactor: 2,
@@ -787,7 +787,7 @@ test('reconnection delay grow factor', done => {
 
 test('minUptime', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, [], {
+    const ws = new SmartlyWebSocket(URL, [], {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 2000,
         reconnectionDelayGrowFactor: 2,
@@ -830,7 +830,7 @@ test('minUptime', done => {
 
 test('reconnect after closing', done => {
     const wss = new WebSocketServer({port: PORT});
-    const ws = new ReconnectingWebSocket(URL, undefined, {
+    const ws = new SmartlyWebSocket(URL, undefined, {
         minReconnectionDelay: 100,
         maxReconnectionDelay: 200,
     });

@@ -36,9 +36,9 @@ request :)
 ### Simple usage
 
 ```javascript
-import ReconnectingWebSocket from 'reconnecting-websocket';
+import SmartlyWebSocket from 'smartly-websocket';
 
-const rws = new ReconnectingWebSocket('ws://my.site.com');
+const rws = new SmartlyWebSocket('ws://my.site.com');
 
 rws.addEventListener('open', () => {
     rws.send('hello!');
@@ -54,7 +54,7 @@ The `url` parameter will be resolved before connecting, possible types:
 -   `() => Promise<string>`
 
 ```javascript
-import ReconnectingWebSocket from 'reconnecting-websocket';
+import SmartlyWebSocket from 'smartly-websocket';
 
 const urls = ['ws://my.site.com', 'ws://your.site.com', 'ws://their.site.com'];
 let urlIndex = 0;
@@ -62,11 +62,11 @@ let urlIndex = 0;
 // round robin url provider
 const urlProvider = () => urls[urlIndex++ % urls.length];
 
-const rws = new ReconnectingWebSocket(urlProvider);
+const rws = new SmartlyWebSocket(urlProvider);
 ```
 
 ```javascript
-import ReconnectingWebSocket from 'reconnecting-websocket';
+import SmartlyWebSocket from 'smartly-websocket';
 
 // async url provider
 const urlProvider = async () => {
@@ -74,7 +74,7 @@ const urlProvider = async () => {
     return `wss://my.site.com/${token}`;
 };
 
-const rws = new ReconnectingWebSocket(urlProvider);
+const rws = new SmartlyWebSocket(urlProvider);
 ```
 
 ### Options
@@ -82,7 +82,7 @@ const rws = new ReconnectingWebSocket(urlProvider);
 #### Sample with custom options
 
 ```javascript
-import ReconnectingWebSocket from 'reconnecting-websocket';
+import SmartlyWebSocket from 'smartly-websocket';
 import WS from 'ws';
 
 const options = {
@@ -90,7 +90,7 @@ const options = {
     connectionTimeout: 1000,
     maxRetries: 10,
 };
-const rws = new ReconnectingWebSocket('ws://my.site.com', [], options);
+const rws = new SmartlyWebSocket('ws://my.site.com', [], options);
 ```
 
 #### Available options
