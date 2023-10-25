@@ -2,7 +2,7 @@
     "name": "smartly-websocket",
     "version": "0.0.1",
     "description": "Smartly WebSocket",
-    "main": "./dist/smartly-websocket-cjs.js",
+    "main": "./smartly-websocket.ts",
     "module": "./dist/smartly-websocket-mjs.js",
     "types": "./dist/smartly-websocket.d.ts",
     "scripts": {

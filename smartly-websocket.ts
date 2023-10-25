@@ -126,6 +126,8 @@ export default class SmartlyWebSocket {
 
     private _messageQueue: Message[] = [];
 
+    private _sid: string = '';
+
     protected readonly _url: UrlProvider;
 
     private readonly _protocols?: string | string[];
@@ -244,6 +246,10 @@ export default class SmartlyWebSocket {
      */
     get url(): string {
         return this._ws ? this._ws.url : '';
+    }
+
+    get sid(): string {
+        return this._ws?.readyState === this.OPEN ? this._sid : 'NOT CONNECTED';
     }
 
     /**
@@ -551,8 +557,6 @@ export default class SmartlyWebSocket {
 
         this._ws!.binaryType = this._binaryType;
 
-        this._startHeartbeat();
-
         // send enqueued messages (messages sent before websocket open event)
         this._messageQueue.forEach((message) => this._ws?.send(message));
         this._messageQueue = [];
@@ -569,13 +573,13 @@ export default class SmartlyWebSocket {
     };
 
     private _handleMessage = (event: MessageEvent) => {
-        if (event.data === '3') {
-            this._triggerPongCallback();
+        const result = this._resolveMessage(event.data);
+
+        if (!result) {
             return;
         }
 
         this._debug('message event');
-        console.log('收到消息：', event.data);
 
         if (this.onmessage) {
             this.onmessage(event);
@@ -668,12 +672,12 @@ export default class SmartlyWebSocket {
         }
     }
 
-    private _startHeartbeat() {
+    private _sendHeartbeat() {
         const { pingInterval = DEFAULT.pingInterval, pingTimeout = DEFAULT.pingTimeout } = this._options;
-        this._heartbeatTimer = setInterval(() => {
-            if (this._ws?.readyState === this.OPEN && !this._heartbeatTimeout) {
+        this._heartbeatTimer = setTimeout(() => {
+            if (this._ws?.readyState === this.OPEN) {
                 // todo 心跳结构
-                this._ws.send(this._options.heartbeatData || MESSAGE_FRAME_IDENTIFIER.PING);
+                this._ws.send(MESSAGE_FRAME_IDENTIFIER.PING);
                 this._broadcastEvent(EVENT_NAME.PING);
                 this._debug('ping');
                 this._heartbeatTimeout = setTimeout(() => {
@@ -687,9 +691,8 @@ export default class SmartlyWebSocket {
 
     private _stopHeartbeat() {
         if (this._heartbeatTimer) {
-            console.log('中断心跳');
             this._debug('stop ping');
-            clearInterval(this._heartbeatTimer);
+            clearTimeout(this._heartbeatTimer);
             clearTimeout(this._heartbeatTimeout);
             this._heartbeatTimer = null;
             this._heartbeatTimeout = null;
@@ -700,6 +703,57 @@ export default class SmartlyWebSocket {
         this._debug('pong');
         clearTimeout(this._heartbeatTimeout);
         this._heartbeatTimeout = null;
+        this._sendHeartbeat()
         this._broadcastEvent(EVENT_NAME.PONG);
+    }
+
+    private _resolveMessage(data: any) {
+        if (typeof data === 'string') {
+            if (data.length === 1 && data === '3') {
+                this._triggerPongCallback();
+                return false;
+            }
+            if (data[0] === '0') {
+                try {
+                    const _data: any = JSON.parse(data.slice(1));
+                    this._debug('connect data', _data);
+                    if (this._sid) {
+                        // todo 处理重连事件
+                    }
+                    this._sid = _data.sid;
+                    this._options.pingInterval = _data.pingInterval;
+                    this._options.pingTimeout = _data.pingTimeout;
+                    // 开启心跳
+                    this._sendHeartbeat();
+                    return false;
+                } catch (e) {
+                    return true;
+                }
+            }
+            if (data.slice(0, 2) === '42') {
+                try {
+                    const _data: any = JSON.parse(data.slice(2));
+                    if (Array.isArray(_data) && _data.length > 2) {
+                        const _eventName = _data[0];
+                        const _eventData = _data[1];
+                    }
+                    return false;
+                } catch (e) {}
+                return true;
+            }
+            if (data.slice(0, 2) === '43') {
+                try {
+                    const _m_id = data.slice(2, 1);
+                    const _data: any = JSON.parse(data.slice(3));
+                    if (Array.isArray(_data) && _data.length > 2) {
+                        const _eventName = _data[0];
+                        const _eventData = _data[1];
+                    }
+                    return false;
+                } catch (e) {}
+                return true;
+            }
+        }
+        return true;
     }
 }
