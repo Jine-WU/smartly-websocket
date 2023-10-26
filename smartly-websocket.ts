@@ -780,17 +780,17 @@ export default class SmartlyWebSocket {
             if (_result.type === MESSAGE_FRAME_IDENTIFIER.MESSAGE) {
                 try {
                     const _data: any = JSON.parse(_result.data);
-                    if (Array.isArray(_data) && _data.length > 2) {
+                    if (Array.isArray(_data) && _data.length > 1) {
                         const _eventName = _data[0];
-                        const _eventData: any = _data[1];
+                        const _eventData: any = JSON.parse(_data[1]);
                         if (this._eventListeners.has(_eventName)) {
                             this._eventListeners.get(_eventName).forEach((callback: any) => {
                                 const eventData: any = JSON.parse(JSON.stringify(_eventData));
                                 delete eventData.message_id;
-                                callback(_eventData);
+                                callback(eventData);
                             });
                         }
-                        // todo 发送 ack 消息
+                        this._messageAck(_eventData.message_id);
                     }
                 } catch (e) {}
                 return true;
@@ -800,7 +800,7 @@ export default class SmartlyWebSocket {
                     const _data: any = JSON.parse(_result.data);
                     const _packetId = _result.pid ? Number(_result.pid) : null;
                     if (Array.isArray(_data) && _data.length > 2) {
-                        const _eventData = _data[0];
+                        const _eventData = JSON.parse(_data[1]);
                         if ((_packetId !== null) && this._emitCallbacks.has(_packetId)) {
                             const _cb = this._emitCallbacks.get(_packetId);
                             _cb(_eventData);
@@ -859,5 +859,11 @@ export default class SmartlyWebSocket {
             }
         });
         this._emitEventQueue = [];
+    }
+
+    private _messageAck(message_id: string) {
+        const eventData = JSON.stringify({ message_id, sid: this._sid });
+        const _data = JSON.stringify(['ack', eventData]);
+        this.send(`${MESSAGE_FRAME_IDENTIFIER.CALLBACK}${_data}`);
     }
 }
