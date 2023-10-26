@@ -7,7 +7,8 @@
     "types": "./dist/smartly-websocket.d.ts",
     "scripts": {
         "build": "npm run clean && rollup -c && uglifyjs --compress --mangle -o dist/smartly-websocket-iife.min.js dist/smartly-websocket-iife.js",
-        "test": "jest --coverage",
+        "test": "jest",
+        "coverage": "jest --coverage",
         "clean": "del dist && del coverage && del .nyc_output",
         "report": "nyc report --reporter=html && opn coverage/index.html",
         "coveralls": "cat ./coverage/lcov.info | ./node_modules/.bin/coveralls",
