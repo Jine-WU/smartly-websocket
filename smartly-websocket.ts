@@ -7,6 +7,10 @@
 
 import * as Events from './events';
 
+interface EmitPayload {
+    [key: string]: any;
+}
+
 // eslint-disable-next-line consistent-return
 const getGlobalWebSocket = (): WebSocket | undefined => {
     if (typeof WebSocket !== 'undefined') {
@@ -87,6 +91,12 @@ export type UrlProvider = string | (() => string) | (() => Promise<string>);
 
 export type Message = string | ArrayBuffer | Blob | ArrayBufferView;
 
+export type EmitEvent = {
+    eventName: string;
+    payload: EmitPayload;
+    cb?: (cbRes: any) => void;
+};
+
 export type ListenersMap = {
     error: Array<Events.WebSocketEventListenerMap['error']>;
     message: Array<Events.WebSocketEventListenerMap['message']>;
@@ -106,6 +116,12 @@ export default class SmartlyWebSocket {
 
     private _eventListeners: Map<string, any> = new Map();
 
+    private _emitCallbacks: Map<number, any> = new Map();
+
+    private _emitEventQueue: EmitEvent[] = [];
+
+    private _messageQueue: Message[] = [];
+
     private _retryCount = -1;
 
     private _uptimeTimeout: any;
@@ -118,15 +134,17 @@ export default class SmartlyWebSocket {
 
     private _shouldReconnect = true;
 
+    private _connectSucceeded = false;
+
     private _connectLock = false;
 
     private _binaryType: BinaryType = 'blob';
 
     private _closeCalled = false;
 
-    private _messageQueue: Message[] = [];
-
     private _sid: string = '';
+
+    private _packetId: number = 0;
 
     protected readonly _url: UrlProvider;
 
@@ -273,6 +291,13 @@ export default class SmartlyWebSocket {
      */
     public onopen: ((event: Event) => void) | null = null;
 
+    public connect() {
+        if (!this._ws || this._ws.readyState === this.CLOSED) {
+            this._shouldReconnect = true;
+            this._connect();
+        }
+    }
+
     /**
      * Closes the WebSocket connection or connection attempt, if any. If the connection is already
      * CLOSED, this method does nothing
@@ -390,7 +415,23 @@ export default class SmartlyWebSocket {
      * @param payload
      * @param cb
      */
-    public emit(eventName: string, payload: any, cb?: (cbRes: any) => void) {}
+    public emit(eventName: string, payload: EmitPayload, cb?: (cbRes: any) => void) {
+        if (this._connectSucceeded) {
+            try {
+                const _packetId = this._packetId;
+                const eventData = JSON.stringify({ ...payload, sid: this._sid });
+                // const eventData = { ...payload, sid: this._sid };
+                const _data = JSON.stringify([eventName, eventData]);
+                this.send(`${MESSAGE_FRAME_IDENTIFIER.MESSAGE}${_packetId}${_data}`);
+                if (cb) {
+                    this._emitCallbacks.set(_packetId, cb);
+                }
+                this._packetId += 1;
+            } catch (e) {}
+        } else {
+            this._emitEventQueue.push(cb ? { eventName, payload, cb } : { eventName, payload });
+        }
+    }
 
     private _formattedTime() {
         const now = new Date();
@@ -607,9 +648,9 @@ export default class SmartlyWebSocket {
     };
 
     private _handleClose = (event: Events.CloseEvent) => {
-        console.log('断连原因：', event);
-        this._debug('close event');
+        this._debug('close event', event);
         this._clearTimeouts();
+        this._connectSucceeded = false;
 
         if (this._shouldReconnect) {
             this._connect();
@@ -709,13 +750,17 @@ export default class SmartlyWebSocket {
 
     private _resolveMessage(data: any) {
         if (typeof data === 'string') {
-            if (data.length === 1 && data === '3') {
+            const _result = this._decoder(data);
+            if (!_result.type) {
+                return false;
+            }
+            if (_result.type === MESSAGE_FRAME_IDENTIFIER.PONG) {
                 this._triggerPongCallback();
                 return false;
             }
-            if (data[0] === '0') {
+            if (_result.type === MESSAGE_FRAME_IDENTIFIER.CONNECT) {
                 try {
-                    const _data: any = JSON.parse(data.slice(1));
+                    const _data: any = JSON.parse(_result.data);
                     this._debug('connect data', _data);
                     if (this._sid) {
                         // todo 处理重连事件
@@ -723,37 +768,96 @@ export default class SmartlyWebSocket {
                     this._sid = _data.sid;
                     this._options.pingInterval = _data.pingInterval;
                     this._options.pingTimeout = _data.pingTimeout;
+                    this._connectSucceeded = true;
                     // 开启心跳
                     this._sendHeartbeat();
-                    return false;
-                } catch (e) {
-                    return true;
-                }
-            }
-            if (data.slice(0, 2) === '42') {
-                try {
-                    const _data: any = JSON.parse(data.slice(2));
-                    if (Array.isArray(_data) && _data.length > 2) {
-                        const _eventName = _data[0];
-                        const _eventData = _data[1];
-                    }
-                    return false;
+                    setTimeout(() => {
+                        this._executeEmitEventQueue();
+                    }, 500);
                 } catch (e) {}
                 return true;
             }
-            if (data.slice(0, 2) === '43') {
+            if (_result.type === MESSAGE_FRAME_IDENTIFIER.MESSAGE) {
                 try {
-                    const _m_id = data.slice(2, 1);
-                    const _data: any = JSON.parse(data.slice(3));
+                    const _data: any = JSON.parse(_result.data);
                     if (Array.isArray(_data) && _data.length > 2) {
                         const _eventName = _data[0];
-                        const _eventData = _data[1];
+                        const _eventData: any = _data[1];
+                        if (this._eventListeners.has(_eventName)) {
+                            this._eventListeners.get(_eventName).forEach((callback: any) => {
+                                const eventData: any = JSON.parse(JSON.stringify(_eventData));
+                                delete eventData.message_id;
+                                callback(_eventData);
+                            });
+                        }
+                        // todo 发送 ack 消息
                     }
-                    return false;
                 } catch (e) {}
                 return true;
             }
+            if (_result.type === MESSAGE_FRAME_IDENTIFIER.CALLBACK) {
+                try {
+                    const _data: any = JSON.parse(_result.data);
+                    const _packetId = _result.pid ? Number(_result.pid) : null;
+                    if (Array.isArray(_data) && _data.length > 2) {
+                        const _eventData = _data[0];
+                        if ((_packetId !== null) && this._emitCallbacks.has(_packetId)) {
+                            const _cb = this._emitCallbacks.get(_packetId);
+                            _cb(_eventData);
+                            this._emitCallbacks.delete(_packetId);
+                        }
+                    }
+                } catch (e) {}
+                return true;
+            }
+            return true;
         }
         return true;
+    }
+
+    private _decoder(str: string) {
+        const _result = {
+            type: null,
+            pid: '',
+            data: '',
+        };
+        const match = str.match(/^\d+/);
+        if (match) {
+            const _type = match[0];
+            if (_type === MESSAGE_FRAME_IDENTIFIER.CONNECT) {
+                _result.type = MESSAGE_FRAME_IDENTIFIER.CONNECT;
+                _result.data = str.slice(MESSAGE_FRAME_IDENTIFIER.CONNECT.length);
+            } else if (_type === MESSAGE_FRAME_IDENTIFIER.PONG) {
+                _result.type = MESSAGE_FRAME_IDENTIFIER.PONG;
+            } else if (_type.indexOf(MESSAGE_FRAME_IDENTIFIER.MESSAGE) === 0) {
+                _result.type = MESSAGE_FRAME_IDENTIFIER.MESSAGE;
+                let index = MESSAGE_FRAME_IDENTIFIER.MESSAGE.length;
+                if (_type !== MESSAGE_FRAME_IDENTIFIER.MESSAGE) {
+                    index = _type.length;
+                    _result.pid = _type.slice(MESSAGE_FRAME_IDENTIFIER.MESSAGE.length);
+                }
+                _result.data = str.slice(index);
+            } else if (_type.indexOf(MESSAGE_FRAME_IDENTIFIER.CALLBACK) === 0) {
+                _result.type = MESSAGE_FRAME_IDENTIFIER.CALLBACK;
+                let index = MESSAGE_FRAME_IDENTIFIER.CALLBACK.length;
+                if (_type !== MESSAGE_FRAME_IDENTIFIER.CALLBACK) {
+                    index = _type.length;
+                    _result.pid = _type.slice(MESSAGE_FRAME_IDENTIFIER.CALLBACK.length);
+                }
+                _result.data = str.slice(index);
+            }
+        }
+        return _result;
+    }
+
+    private _executeEmitEventQueue() {
+        this._emitEventQueue.forEach((emitEvent: EmitEvent) => {
+            if (emitEvent.cb) {
+                this.emit(emitEvent.eventName, emitEvent.payload, emitEvent.cb);
+            } else {
+                this.emit(emitEvent.eventName, emitEvent.payload);
+            }
+        });
+        this._emitEventQueue = [];
     }
 }
