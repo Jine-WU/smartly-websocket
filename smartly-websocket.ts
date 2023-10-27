@@ -427,7 +427,9 @@ export default class SmartlyWebSocket {
                     this._emitCallbacks.set(_packetId, cb);
                 }
                 this._packetId += 1;
-            } catch (e) {}
+            } catch (e) {
+                this._debug('emit error', e);
+            }
         } else {
             this._emitEventQueue.push(cb ? { eventName, payload, cb } : { eventName, payload });
         }
@@ -774,7 +776,9 @@ export default class SmartlyWebSocket {
                     setTimeout(() => {
                         this._executeEmitEventQueue();
                     }, 500);
-                } catch (e) {}
+                } catch (e) {
+                    this._debug('connect error', e);
+                }
                 return true;
             }
             if (_result.type === MESSAGE_FRAME_IDENTIFIER.MESSAGE) {
@@ -790,7 +794,9 @@ export default class SmartlyWebSocket {
                         }
                         this._messageAck(_eventData.message_id);
                     }
-                } catch (e) {}
+                } catch (e) {
+                    this._debug('message error', e);
+                }
                 return true;
             }
             if (_result.type === MESSAGE_FRAME_IDENTIFIER.CALLBACK) {
@@ -798,14 +804,15 @@ export default class SmartlyWebSocket {
                     const _data: any = JSON.parse(_result.data);
                     const _packetId = _result.pid ? Number(_result.pid) : null;
                     if (Array.isArray(_data) && _data.length) {
-                        const _eventData = JSON.parse(_data[1]);
                         if ((_packetId !== null) && this._emitCallbacks.has(_packetId)) {
                             const _cb = this._emitCallbacks.get(_packetId);
-                            _cb(_eventData);
+                            _cb(_data[0]);
                             this._emitCallbacks.delete(_packetId);
                         }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    this._debug('callback error', e);
+                }
                 return true;
             }
             return true;
