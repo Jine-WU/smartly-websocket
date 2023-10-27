@@ -10,8 +10,20 @@ const sid = '1cd7f727-2a9e-4d80-a9f4-e048021e8844';
 const pingInterval = 1000; // 小于5s 或者设置 jest的timeout
 const pingTimeout = 1500;
 const sidTxt = `0{"sid":"${sid}","pingInterval": ${pingInterval},"pingTimeout":${pingTimeout}}`;
+let portCount = 0;
 
 jest.setTimeout(10000);
+
+// 创建服务端, PORT 自增
+function createServer() {
+    portCount += 1;
+    const port = PORT + portCount;
+    const wsServer = new WebSocketServer({ port }); // ws 服务端
+    return {
+        wsServer,
+        wsUrl: `ws://localhost:${port}`,
+    };
+}
 
 // 测试开始
 beforeEach(() => {
@@ -20,13 +32,13 @@ beforeEach(() => {
 
 // 测试结束
 afterEach(() => {
-    delete (global as any).WebSocket;
+    // delete (global as any).WebSocket;
     jest.restoreAllMocks();
 });
 
 test('初始化连接', done => {
-    const wsServer = new WebSocketServer({ port: PORT }); // ws 服务端
-    const ws = new SmartlyWebSocket(URL);
+    const { wsServer, wsUrl } = createServer();
+    const ws = new SmartlyWebSocket(wsUrl);
     let initOpen = false;
 
     wsServer.on('connection', (socket, req) => {
@@ -48,9 +60,8 @@ test('初始化连接', done => {
     });
 
     ws.addEventListener('close', () => {
-        wsServer.close(() => {
-            setTimeout(() => done(), 100);
-        });
+        expect(initOpen).toBeTruthy();
+        done();
     });
 });
 
@@ -90,8 +101,8 @@ test('心跳', done => {
 });
 
 test('心跳-超时', done => {
-    const wsServer = new WebSocketServer({ port: PORT }); // ws 服务端
-    const ws = new SmartlyWebSocket(URL);
+    const { wsServer, wsUrl } = createServer();
+    const ws = new SmartlyWebSocket(wsUrl);
     let initHeart = false;
     let heartTime = 0;
 
@@ -115,8 +126,8 @@ test('心跳-超时', done => {
 });
 
 test('心跳-超时-重连', done => {
-    const wsServer = new WebSocketServer({ port: PORT }); // ws 服务端
-    const ws = new SmartlyWebSocket(URL);
+    const { wsServer, wsUrl } = createServer();
+    const ws = new SmartlyWebSocket(wsUrl);
     let initConnect = false;
     let reconnectTime = 0;
     let reconnect = false;
@@ -141,8 +152,6 @@ test('心跳-超时-重连', done => {
         expect(reconnect).toBeTruthy();
         expect(reconnectCount).toBe(1);
         expect(Date.now() - reconnectTime).toBeGreaterThan(pingTimeout);
-        wsServer.close(() => {
-            setTimeout(() => done(), 100);
-        });
+        done();
     });
 });
