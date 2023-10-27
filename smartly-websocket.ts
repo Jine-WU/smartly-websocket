@@ -387,7 +387,7 @@ export default class SmartlyWebSocket {
     }
 
     /**
-     * 自定义事件监听
+     * Custom event listening
      * @param eventName
      * @param callback
      */
@@ -399,7 +399,7 @@ export default class SmartlyWebSocket {
     }
 
     /**
-     * 移除自定义事件监听
+     * Remove custom event listener
      * @param eventName
      * @param callback
      */
@@ -410,7 +410,7 @@ export default class SmartlyWebSocket {
     }
 
     /**
-     * 自定义发送事件
+     * Custom sending event
      * @param eventName
      * @param payload
      * @param cb
@@ -607,9 +607,9 @@ export default class SmartlyWebSocket {
         }
         this._listeners.open.forEach((listener) => this._callEventListener(event, listener));
         if (this._retryCount > 0) {
-            this._broadcastEvent(EVENT_NAME.RECONNECT, { ...event, retryCount: this._retryCount });
+            this._broadcastEvent(EVENT_NAME.RECONNECT, this._retryCount);
         } else {
-            this._broadcastEvent(EVENT_NAME.CONNECT, event);
+            this._broadcastEvent(EVENT_NAME.CONNECT);
         }
     };
 
@@ -785,9 +785,7 @@ export default class SmartlyWebSocket {
                         const _eventData: any = JSON.parse(_data[1]);
                         if (this._eventListeners.has(_eventName)) {
                             this._eventListeners.get(_eventName).forEach((callback: any) => {
-                                const eventData: any = JSON.parse(JSON.stringify(_eventData));
-                                delete eventData.message_id;
-                                callback(eventData);
+                                callback(_data[1]);
                             });
                         }
                         this._messageAck(_eventData.message_id);
@@ -799,7 +797,7 @@ export default class SmartlyWebSocket {
                 try {
                     const _data: any = JSON.parse(_result.data);
                     const _packetId = _result.pid ? Number(_result.pid) : null;
-                    if (Array.isArray(_data) && _data.length > 2) {
+                    if (Array.isArray(_data) && _data.length) {
                         const _eventData = JSON.parse(_data[1]);
                         if ((_packetId !== null) && this._emitCallbacks.has(_packetId)) {
                             const _cb = this._emitCallbacks.get(_packetId);
