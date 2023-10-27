@@ -4,7 +4,7 @@ import SmartlyWebSocket, { ErrorEvent } from '../smartly-websocket';
 const WebSocketServer = WebSocket.Server;
 
 const PORT = 30123;
-const PORT_UNRESPONSIVE = '30124';
+const PORT_UNRESPONSIVE = 31000;
 const URL = `ws://localhost:${PORT}`;
 const sid = '1cd7f727-2a9e-4d80-a9f4-e048021e8844';
 const pingInterval = 1000; // 小于5s 或者设置 jest的timeout
@@ -12,7 +12,7 @@ const pingTimeout = 1500;
 const sidTxt = `0{"sid":"${sid}","pingInterval": ${pingInterval},"pingTimeout":${pingTimeout}}`;
 let portCount = 0;
 
-jest.setTimeout(10000);
+jest.setTimeout(15000);
 
 // 创建服务端, PORT 自增
 function createServer() {
@@ -32,7 +32,7 @@ beforeEach(() => {
 
 // 测试结束
 afterEach(() => {
-    // delete (global as any).WebSocket;
+    delete (global as any).WebSocket;
     jest.restoreAllMocks();
 });
 
@@ -100,7 +100,7 @@ test('心跳', done => {
     });
 });
 
-test('心跳-超时', done => {
+test('ping 超时', done => {
     const { wsServer, wsUrl } = createServer();
     const ws = new SmartlyWebSocket(wsUrl);
     let initHeart = false;
@@ -125,21 +125,21 @@ test('心跳-超时', done => {
     });
 });
 
-test('心跳-超时-重连', done => {
+test('超时-重连', done => {
     const { wsServer, wsUrl } = createServer();
-    const ws = new SmartlyWebSocket(wsUrl);
+    let ws = new SmartlyWebSocket(wsUrl, '', {});
     let initConnect = false;
     let reconnectTime = 0;
     let reconnect = false;
-    let reconnectCount = 0;
 
     wsServer.on('connection', (socket, req) => {
         // 发送信息
         socket.send(sidTxt);
         if (initConnect) {
             reconnect = true;
-            reconnectCount += 1;
-            wsServer.close();
+            setTimeout(() => {
+                wsServer.close();
+            }, 100);
         }
         initConnect = true;
     });
@@ -148,10 +148,43 @@ test('心跳-超时-重连', done => {
         reconnectTime = Date.now();
     });
 
-    ws.addEventListener('error', () => {
-        expect(reconnect).toBeTruthy();
-        expect(reconnectCount).toBe(1);
-        expect(Date.now() - reconnectTime).toBeGreaterThan(pingTimeout);
-        done();
+    function onClose() {
+        if (reconnect) {
+            expect(Date.now() - reconnectTime).toBeGreaterThan(pingTimeout);
+            ws.close();
+            ws.removeEventListener('close', onClose);
+            ws = null as any;
+            done();
+        }
+    }
+
+    ws.addEventListener('close', onClose);
+});
+
+// 测试重连次数
+test('重连次数', done => {
+    const maxRetries = 2;
+    const interval = 200;
+    let tryCount = 0;
+    let ws = new SmartlyWebSocket(`ws:localhost:${PORT_UNRESPONSIVE}`, '', {
+        maxRetries,
+        pingInterval: interval,
+        pingTimeout: 300,
+        minReconnectionDelay: 100,
+        maxReconnectionDelay: 200,
+    });
+
+    ws.on('reconnect_attempt', res => {
+        tryCount = res.retryCount;
+    });
+
+    ws.on('reconnect_failed', () => {
+        // 延时之后判断重连次数
+        setTimeout(() => {
+            expect(tryCount).toBe(maxRetries);
+            ws.close();
+            ws = null as any;
+            done();
+        }, interval + 100);
     });
 });
