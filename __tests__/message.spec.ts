@@ -76,7 +76,7 @@ test('消息发送', done => {
             } catch {
                 done.fail('消息发送失败');
             }
-
+            ws.off('send-message');
             ws.close();
             wsServer.close();
         });
@@ -114,6 +114,7 @@ test('消息接收', done => {
             // 接收 ack
             if ((event.data as string).indexOf('43') === 0) {
                 expect(event.data).toBe(ackMsg);
+                ws.off('receive-message');
                 ws.close();
                 wsServer.close();
                 done();

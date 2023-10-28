@@ -69,16 +69,19 @@ test('getters when not ready', done => {
     };
 });
 
-// test('debug on', done => {
-//     const logSpy = jest.spyOn(console, 'log').mockReturnValue();
+test('debug on', done => {
+    const logSpy = jest.spyOn(console, 'log').mockReturnValue();
 
-//     const ws = new SmartlyWebSocket(URL, undefined, {maxRetries: 0, debug: true});
+    const ws = new SmartlyWebSocket(URL, undefined, {
+        maxRetries: 0,
+        debug: true,
+    });
 
-//     ws.onerror = () => {
-//         expect(logSpy).toHaveBeenCalledWith('RWS>', 'connect', 0);
-//         done();
-//     };
-// });
+    ws.onerror = () => {
+        expect(logSpy).toHaveBeenCalled();
+        done();
+    };
+});
 
 test('debug off', done => {
     const logSpy = jest.spyOn(console, 'log').mockReturnValue();
